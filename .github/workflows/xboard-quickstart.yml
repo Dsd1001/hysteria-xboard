@@ -1,0 +1,64 @@
+name: Validate Xboard quick start
+
+on:
+  pull_request:
+    paths:
+      - README.md
+      - docs/xboard.md
+      - docker-compose*.yml
+      - scripts/xboard-init.sh
+      - deploy/xboard/**
+      - examples/xboard/**
+      - .github/workflows/xboard-quickstart.yml
+  push:
+    branches:
+      - master
+    paths:
+      - README.md
+      - docs/xboard.md
+      - docker-compose*.yml
+      - scripts/xboard-init.sh
+      - deploy/xboard/**
+      - examples/xboard/**
+      - .github/workflows/xboard-quickstart.yml
+
+permissions:
+  contents: read
+
+jobs:
+  quick-start:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Validate initialization and Compose files
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/xboard-init.sh
+          printf '%s\n' \
+            'https://panel.example.com' \
+            '401' \
+            'hy.example.com' \
+            'admin@example.com' \
+            'ci-test-token' | ./scripts/xboard-init.sh
+
+          test "$(stat -c '%a' deploy/xboard/server.yaml)" = '600'
+          test "$(stat -c '%a' deploy/xboard/secrets/xboard_token)" = '600'
+          python3 - <<'PY'
+          from pathlib import Path
+
+          config = Path("deploy/xboard/server.yaml").read_text()
+          assert "apiMode: legacy" in config
+          assert "ci-test-token" not in config
+          PY
+
+          docker compose config --quiet
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.build.yml \
+            config --quiet
+          docker compose \
+            -f examples/xboard/compose.yaml \
+            config --quiet

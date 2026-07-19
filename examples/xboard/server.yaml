@@ -1,0 +1,27 @@
+listen: :443
+
+tls:
+  cert: /etc/hysteria/certs/server.crt
+  key: /etc/hysteria/certs/server.key
+
+auth:
+  type: xboard
+
+xboard:
+  baseURL: https://xboard.example.com
+  tokenFile: /run/secrets/xboard_token
+  nodeID: "401"
+  apiMode: legacy
+  timeout: 8s
+  users:
+    cacheFile: /var/lib/hysteria/xboard-users.json
+    pullInterval: 30s
+    maxStale: 6h
+  traffic:
+    spoolFile: /var/lib/hysteria/xboard-traffic.db
+    flushInterval: 1s
+    batchInterval: 1m
+    reportInterval: 5s
+
+masquerade:
+  type: 404

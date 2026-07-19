@@ -1,0 +1,34 @@
+# 复制为 deploy/xboard/server.yaml 后修改占位值，或直接运行：
+#   ./scripts/xboard-init.sh
+
+listen: :443
+
+acme:
+  domains:
+    - "hy.example.com"
+  email: "admin@example.com"
+  ca: letsencrypt
+  type: http
+  dir: /var/lib/hysteria/acme
+
+auth:
+  type: xboard
+
+xboard:
+  baseURL: "https://panel.example.com"
+  tokenFile: /run/secrets/xboard_token
+  nodeID: "401"
+  apiMode: legacy
+  timeout: 8s
+  users:
+    cacheFile: /var/lib/hysteria/xboard-users.json
+    pullInterval: 30s
+    maxStale: 6h
+  traffic:
+    spoolFile: /var/lib/hysteria/xboard-traffic.db
+    flushInterval: 1s
+    batchInterval: 1m
+    reportInterval: 5s
+
+masquerade:
+  type: 404
