@@ -84,7 +84,10 @@ type serverConfig struct {
 	ACL                   serverConfigACL             `mapstructure:"acl"`
 	Outbounds             []serverConfigOutboundEntry `mapstructure:"outbounds"`
 	TrafficStats          serverConfigTrafficStats    `mapstructure:"trafficStats"`
+	Xboard                serverConfigXboard          `mapstructure:"xboard"`
 	Masquerade            serverConfigMasquerade      `mapstructure:"masquerade"`
+
+	xboardService *xboardRuntime
 }
 
 type serverConfigRealm struct {
@@ -1439,6 +1442,12 @@ func (c *serverConfig) fillAuthenticator(hyConfig *server.Config) error {
 		}
 		hyConfig.Authenticator = &auth.CommandAuthenticator{Cmd: c.Auth.Command}
 		return nil
+	case "xboard":
+		if c.xboardService == nil {
+			return configError{Field: "xboard", Err: errors.New("Xboard runtime is not initialized")}
+		}
+		hyConfig.Authenticator = c.xboardService.Authenticator()
+		return nil
 	default:
 		return configError{Field: "auth.type", Err: errors.New("unsupported auth type")}
 	}
@@ -1450,10 +1459,22 @@ func (c *serverConfig) fillEventLogger(hyConfig *server.Config) error {
 }
 
 func (c *serverConfig) fillTrafficLogger(hyConfig *server.Config) error {
+	loggers := make([]server.TrafficLogger, 0, 2)
+	if c.xboardService != nil {
+		loggers = append(loggers, c.xboardService.TrafficLogger())
+	}
 	if c.TrafficStats.Listen != "" {
 		tss := trafficlogger.NewTrafficStatsServer(c.TrafficStats.Secret)
-		hyConfig.TrafficLogger = tss
+		loggers = append(loggers, tss)
 		go runTrafficStatsServer(c.TrafficStats.Listen, tss)
+	}
+	switch len(loggers) {
+	case 0:
+		hyConfig.TrafficLogger = nil
+	case 1:
+		hyConfig.TrafficLogger = loggers[0]
+	default:
+		hyConfig.TrafficLogger = trafficlogger.NewMultiTrafficLogger(loggers...)
 	}
 	return nil
 }
@@ -1606,14 +1627,36 @@ func runServer(v *viper.Viper) {
 	if err := v.Unmarshal(&config); err != nil {
 		logger.Fatal("failed to parse server config", zap.Error(err))
 	}
+	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
+	initResult, err := config.prepareXboard(runtimeCtx)
+	if err != nil {
+		cancelRuntime()
+		logger.Fatal("failed to initialize Xboard", zap.Error(err))
+	}
+	if initResult.UsingCache {
+		logger.Warn("Xboard is unavailable; using last-known-good user cache", zap.Error(initResult.SyncError))
+	}
+	if initResult.CacheError != nil && !errors.Is(initResult.CacheError, os.ErrNotExist) {
+		logger.Warn("failed to load previous Xboard user cache; remote sync succeeded", zap.Error(initResult.CacheError))
+	}
 	hyConfig, err := config.Config()
 	if err != nil {
+		cancelRuntime()
+		_ = config.closeXboard()
 		logger.Fatal("failed to load server config", zap.Error(err))
 	}
 
 	s, err := server.NewServer(hyConfig)
 	if err != nil {
+		cancelRuntime()
+		_ = config.closeXboard()
 		logger.Fatal("failed to initialize server", zap.Error(err))
+	}
+	if err := config.startXboard(runtimeCtx); err != nil {
+		_ = s.Close()
+		cancelRuntime()
+		_ = config.closeXboard()
+		logger.Fatal("failed to start Xboard runtime", zap.Error(err))
 	}
 	if config.Listen != "" {
 		logger.Info("server up and running", zap.String("listen", config.Listen))
@@ -1640,10 +1683,18 @@ func runServer(v *viper.Viper) {
 		if err := s.Close(); err != nil {
 			logger.Error("failed to shut down server cleanly", zap.Error(err))
 		}
+		cancelRuntime()
+		if err := config.closeXboard(); err != nil {
+			logger.Error("failed to shut down Xboard cleanly", zap.Error(err))
+		}
 		if err := <-serveErrChan; err != nil {
 			logger.Info("server stopped", zap.Error(err))
 		}
 	case err := <-serveErrChan:
+		cancelRuntime()
+		if closeErr := config.closeXboard(); closeErr != nil {
+			logger.Error("failed to shut down Xboard cleanly", zap.Error(closeErr))
+		}
 		if err != nil {
 			logger.Fatal("failed to serve", zap.Error(err))
 		}

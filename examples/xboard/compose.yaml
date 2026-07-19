@@ -1,0 +1,26 @@
+services:
+  hysteria:
+    image: ghcr.io/your-org/hysteria-xboard:2.10.0-xboard.1
+    container_name: hysteria-xboard
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - server
+      - -c
+      - /etc/hysteria/server.yaml
+      - --disable-update-check
+    volumes:
+      - ./server.yaml:/etc/hysteria/server.yaml:ro
+      - ./certs:/etc/hysteria/certs:ro
+      - ./secrets/xboard_token:/run/secrets/xboard_token:ro
+      - ./data:/var/lib/hysteria
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+    # 仅当 listen 使用 UDP 端口范围并需要主机防火墙重定向时启用：
+    # cap_add:
+    #   - NET_ADMIN
