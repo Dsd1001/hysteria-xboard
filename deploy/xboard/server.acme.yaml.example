@@ -18,6 +18,7 @@ xboard:
   baseURL: "https://panel.example.com"
   tokenFile: /run/secrets/xboard_token
   nodeID: "401"
+  apiMode: legacy
   timeout: 8s
   users:
     cacheFile: /var/lib/hysteria/xboard-users.json

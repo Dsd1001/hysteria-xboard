@@ -87,6 +87,7 @@ xboard:
   baseURL: "$panel_url"
   tokenFile: /run/secrets/xboard_token
   nodeID: "$node_id"
+  apiMode: legacy
   timeout: 8s
   users:
     cacheFile: /var/lib/hysteria/xboard-users.json
@@ -113,5 +114,6 @@ printf '配置：%s\n' "$config_file"
 printf 'token：%s（权限 0600，不会提交到 Git）\n' "$secret_file"
 printf '\n下一步：\n'
 printf '  cd %q\n' "$repo_root"
-printf '  docker compose up -d --build\n'
+printf '  docker compose pull\n'
+printf '  docker compose up -d\n'
 printf '  docker compose logs -f hysteria\n'

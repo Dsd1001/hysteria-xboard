@@ -1,4 +1,4 @@
-// Package xboard implements the Xboard V2 server user API.
+// Package xboard implements Xboard server user and traffic APIs.
 package xboard
 
 import (
@@ -15,6 +15,8 @@ import (
 const (
 	defaultTimeout      = 10 * time.Second
 	maxResponseBodySize = 4 << 20
+	APIModeLegacy       = "legacy"
+	APIModeLedger       = "ledger"
 )
 
 // Config configures a Client.
@@ -22,6 +24,7 @@ type Config struct {
 	BaseURL   string
 	Token     string
 	NodeID    string
+	APIMode   string
 	AllowHTTP bool
 	Timeout   time.Duration
 }
@@ -41,11 +44,12 @@ type UsersResponse struct {
 	NotModified bool
 }
 
-// Client fetches users from an Xboard V2 server API.
+// Client fetches users and submits traffic to an Xboard server API.
 type Client struct {
 	baseURL *url.URL
 	token   string
 	nodeID  string
+	apiMode string
 	http    *http.Client
 }
 
@@ -56,6 +60,13 @@ func NewClient(config Config) (*Client, error) {
 	}
 	if config.NodeID == "" || strings.TrimSpace(config.NodeID) != config.NodeID {
 		return nil, fmt.Errorf("Xboard node ID is required and must not contain surrounding whitespace")
+	}
+	apiMode := strings.ToLower(strings.TrimSpace(config.APIMode))
+	if apiMode == "" {
+		apiMode = APIModeLegacy
+	}
+	if apiMode != APIModeLegacy && apiMode != APIModeLedger {
+		return nil, fmt.Errorf("unsupported Xboard API mode")
 	}
 
 	baseURL, err := url.Parse(config.BaseURL)
@@ -81,6 +92,7 @@ func NewClient(config Config) (*Client, error) {
 		baseURL: baseURL,
 		token:   config.Token,
 		nodeID:  config.NodeID,
+		apiMode: apiMode,
 		http: &http.Client{
 			Timeout: timeout,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -93,9 +105,19 @@ func NewClient(config Config) (*Client, error) {
 // FetchUsers fetches the current Xboard users. It sends etag in If-None-Match
 // when etag is non-empty.
 func (c *Client) FetchUsers(ctx context.Context, etag string) (*UsersResponse, error) {
-	endpoint := c.baseURL.ResolveReference(&url.URL{Path: "/api/v2/server/user"})
+	path := "/api/v1/server/UniProxy/user"
+	if c.apiMode == APIModeLedger {
+		path = "/api/v2/server/user"
+	}
+	endpoint := c.baseURL.ResolveReference(&url.URL{Path: path})
 	query := url.Values{}
 	query.Set("node_id", c.nodeID)
+	if c.apiMode == APIModeLegacy {
+		// Unmodified Xboard requires these query parameters. HTTPS remains
+		// mandatory by default, and errors never include the request URL.
+		query.Set("token", c.token)
+		query.Set("node_type", "hysteria")
+	}
 	endpoint.RawQuery = query.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
@@ -105,7 +127,9 @@ func (c *Client) FetchUsers(ctx context.Context, etag string) (*UsersResponse, e
 	if etag != "" {
 		req.Header.Set("If-None-Match", etag)
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	if c.apiMode == APIModeLedger {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {

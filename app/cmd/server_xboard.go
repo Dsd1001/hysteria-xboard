@@ -34,6 +34,7 @@ type serverConfigXboard struct {
 	Token     string                    `mapstructure:"token"`
 	TokenFile string                    `mapstructure:"tokenFile"`
 	NodeID    string                    `mapstructure:"nodeID"`
+	APIMode   string                    `mapstructure:"apiMode"`
 	AllowHTTP bool                      `mapstructure:"allowHTTP"`
 	Timeout   time.Duration             `mapstructure:"timeout"`
 	Users     serverConfigXboardUsers   `mapstructure:"users"`
@@ -65,6 +66,7 @@ func (c *serverConfig) prepareXboard(ctx context.Context) (xboard.InitializeResu
 		BaseURL:   c.Xboard.BaseURL,
 		Token:     token,
 		NodeID:    c.Xboard.NodeID,
+		APIMode:   c.Xboard.APIMode,
 		AllowHTTP: c.Xboard.AllowHTTP,
 		Timeout:   c.Xboard.Timeout,
 	})

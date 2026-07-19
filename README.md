@@ -23,27 +23,28 @@
 
 ## Hysteria × Xboard 快速部署
 
-这个 fork 基于官方 Hysteria，增加了 Xboard 用户同步、本地鉴权、持久化流量批次和幂等上报。协议、客户端和 `core` 数据面保持官方实现。
+这个 fork 基于官方 Hysteria，直接兼容未修改的 Xboard `UniProxy` API，提供用户同步、本地鉴权、持久化流量缓存和上报。协议、客户端和 `core` 数据面保持官方实现。
 
 > [!IMPORTANT]
-> 可靠流量上报依赖配套的 Xboard V2 batch-ledger 补丁。必须先完成面板 migration、queue worker/Horizon 和 scheduler，再启动节点。仅启动本容器而不升级面板时，用户同步可以成功，但旧面板不会返回有效的流量 ACK。
+> 默认 `apiMode: legacy` 直接调用现有 Xboard 的 `/api/v1/server/UniProxy/user` 和 `/push`，不需要修改面板、执行 migration 或安装插件。
 
-### 最简单的方式：Compose 本地构建
+### 最简单的方式：直接拉取公开镜像
 
 前置条件：
 
 - Linux 服务器已安装 Docker 与 Docker Compose v2；
 - 一个域名已通过 A/AAAA 记录解析到这台服务器；
 - 公网可以访问服务器的 TCP 80 和 UDP 443；
-- 已在 Xboard 创建对应的 Hysteria 节点并取得 server token；
-- 已部署[配套 Xboard 后端补丁](integrations/xboard/README.md)。
+- 已在现有 Xboard 创建 Hysteria 2 节点并取得 server token；
+- 面板节点端口填写 `443`，节点 TLS server name 与上述域名一致。
 
 ```bash
 git clone --branch feature/xboard https://github.com/Dsd1001/hysteria-xboard.git
 cd hysteria-xboard
 
 ./scripts/xboard-init.sh
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 docker compose logs -f hysteria
 ```
 
@@ -76,7 +77,8 @@ docker compose logs --tail=200 hysteria
 
 ```bash
 git pull --ff-only
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 停止服务但保留数据：
@@ -96,12 +98,19 @@ ghcr.io/dsd1001/hysteria-xboard:latest
 ghcr.io/dsd1001/hysteria-xboard:feature-xboard
 ```
 
-首次发布后需要在 GitHub Packages 中把镜像可见性设为 Public。之后可以跳过本地构建：
+镜像已公开并经过匿名拉取验证，可以直接使用：
 
 ```bash
 docker pull ghcr.io/dsd1001/hysteria-xboard:latest
 HYSTERIA_IMAGE=ghcr.io/dsd1001/hysteria-xboard:latest \
   docker compose up -d --no-build
+```
+
+如果需要从当前源码本地构建：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml \
+  up -d --build
 ```
 
 ### 手动配置
@@ -110,12 +119,13 @@ HYSTERIA_IMAGE=ghcr.io/dsd1001/hysteria-xboard:latest \
 - 自有证书配置模板：[`examples/xboard/server.yaml`](examples/xboard/server.yaml)
 - 详细架构、故障和回滚说明：[`docs/xboard.md`](docs/xboard.md)
 
-### 安全与可靠性边界
+### 现有 Xboard 兼容模式的边界
 
-- Xboard token 通过 Bearer Header 发送，不进入 URL；
+- 原生 Xboard middleware 要求把 token 放在 query；本项目不会在错误日志中打印完整 URL，但必须使用 HTTPS，并建议关闭反向代理 access log 中的 query 记录；
 - 鉴权热路径只访问本地不可变用户快照；
 - 面板故障时保留 last-known-good 用户缓存；
-- 流量由内存 collector 定期写入 bbolt spool，收到 `accepted` / `already_processed` 后才删除；
+- 流量由内存 collector 定期写入 bbolt spool，只有收到原生 Xboard `{"data":true}` 后才删除本地批次；
+- 原生 Xboard API 没有 `batch_id` 幂等键；如果面板已经计费但 HTTP 响应在网络中丢失，重试可能重复计费，这是不修改面板时无法消除的上游限制；
 - 强制断电仍存在最多约一个 `flushInterval`（默认 1 秒）的内存计费窗口；
 - 第一阶段不提供用户级动态限速、在线 IP 上报或独立 `/healthz`。
 

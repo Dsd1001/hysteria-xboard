@@ -1,0 +1,8 @@
+services:
+  hysteria:
+    image: hysteria-xboard:local
+    pull_policy: never
+    build:
+      context: .
+      args:
+        GOPROXY: ${GOPROXY:-}

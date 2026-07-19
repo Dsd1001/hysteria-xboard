@@ -1,6 +1,6 @@
 services:
   hysteria:
-    image: ghcr.io/your-org/hysteria-xboard:2.10.0-xboard.1
+    image: ghcr.io/dsd1001/hysteria-xboard:latest
     container_name: hysteria-xboard
     restart: unless-stopped
     network_mode: host

@@ -2,11 +2,8 @@ name: hysteria-xboard
 
 services:
   hysteria:
-    image: ${HYSTERIA_IMAGE:-hysteria-xboard:local}
-    build:
-      context: .
-      args:
-        GOPROXY: ${GOPROXY:-}
+    image: ${HYSTERIA_IMAGE:-ghcr.io/dsd1001/hysteria-xboard:latest}
+    pull_policy: always
     container_name: hysteria-xboard
     restart: unless-stopped
     network_mode: host

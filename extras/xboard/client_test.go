@@ -267,6 +267,10 @@ func TestNewClientRejectsMissingRequiredInputs(t *testing.T) {
 			name:   "missing scheme and host",
 			config: Config{Token: "token", NodeID: "1"},
 		},
+		{
+			name:   "unsupported API mode",
+			config: Config{BaseURL: "https://xboard.example", Token: "token", NodeID: "1", APIMode: "future"},
+		},
 	}
 
 	for _, test := range tests {
@@ -372,6 +376,7 @@ func TestFetchUsersRequestsV2EndpointAndReturnsUsers(t *testing.T) {
 		BaseURL:   server.URL,
 		Token:     token,
 		NodeID:    "42",
+		APIMode:   APIModeLedger,
 		AllowHTTP: true,
 	})
 	if err != nil {
@@ -393,5 +398,42 @@ func TestFetchUsersRequestsV2EndpointAndReturnsUsers(t *testing.T) {
 	}
 	if got := response.Users[0]; got.ID != 1001 || got.UUID != "user-a" || got.SpeedLimit != 0 || got.DeviceLimit != 0 {
 		t.Errorf("Users[0] = %#v, want valid Xboard user", got)
+	}
+}
+
+func TestFetchUsersDefaultsToUnmodifiedUniProxyContract(t *testing.T) {
+	t.Parallel()
+	const token = "token +&?%/中文"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v1/server/UniProxy/user" {
+			t.Errorf("request = %s %s, want legacy UniProxy user endpoint", r.Method, r.URL.Path)
+		}
+		if got := r.URL.Query().Get("token"); got != token {
+			t.Errorf("token query = %q, want encoded legacy token", got)
+		}
+		if got := r.URL.Query().Get("node_id"); got != "42" {
+			t.Errorf("node_id query = %q, want 42", got)
+		}
+		if got := r.URL.Query().Get("node_type"); got != "hysteria" {
+			t.Errorf("node_type query = %q, want hysteria", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization = %q, want empty for unmodified Xboard", got)
+		}
+		w.Header().Set("ETag", `"legacy"`)
+		_, _ = w.Write([]byte(`{"users":[{"id":1001,"uuid":"user-a","speed_limit":0,"device_limit":0}]}`))
+	}))
+	defer server.Close()
+
+	client, err := NewClient(Config{BaseURL: server.URL, Token: token, NodeID: "42", AllowHTTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.FetchUsers(context.Background(), "")
+	if err != nil {
+		t.Fatalf("FetchUsers() error = %v", err)
+	}
+	if response.ETag != `"legacy"` || len(response.Users) != 1 || response.Users[0].ID != 1001 {
+		t.Fatalf("FetchUsers() response = %#v", response)
 	}
 }

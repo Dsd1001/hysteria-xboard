@@ -7,6 +7,15 @@ on:
       - feature/xboard
     tags:
       - xboard-v*.*.*
+    paths:
+      - app/**
+      - core/**
+      - extras/**
+      - Dockerfile
+      - .dockerignore
+      - hyperbole.py
+      - pyproject.toml
+      - uv.lock
 
 permissions:
   contents: read
@@ -42,7 +51,7 @@ jobs:
 
       - name: Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |

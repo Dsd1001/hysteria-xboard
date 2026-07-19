@@ -24,6 +24,7 @@ xboard:
   baseURL: https://panel.example
   tokenFile: /run/secrets/xboard_token
   nodeID: "401"
+  apiMode: legacy
   timeout: 8s
   users:
     cacheFile: /var/lib/hysteria/xboard-users.json
@@ -41,7 +42,7 @@ xboard:
 	if err := v.Unmarshal(&config); err != nil {
 		t.Fatal(err)
 	}
-	if config.Auth.Type != "xboard" || config.Xboard.NodeID != "401" || config.Xboard.Timeout != 8*time.Second {
+	if config.Auth.Type != "xboard" || config.Xboard.NodeID != "401" || config.Xboard.APIMode != "legacy" || config.Xboard.Timeout != 8*time.Second {
 		t.Fatalf("decoded Xboard config = %#v", config.Xboard)
 	}
 	if config.Xboard.Users.PullInterval != 30*time.Second || config.Xboard.Users.MaxStale != 6*time.Hour {
@@ -52,10 +53,10 @@ xboard:
 func TestPrepareXboardInitializesLocalAuthenticatorAndTrafficLogger(t *testing.T) {
 	const token = "server-token"
 	panel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v2/server/user" {
+		if r.URL.Path != "/api/v1/server/UniProxy/user" {
 			t.Fatalf("panel path = %q", r.URL.Path)
 		}
-		if r.URL.Query().Get("token") != "" || r.URL.Query().Get("node_id") != "hy-node-a" || r.Header.Get("Authorization") != "Bearer "+token {
+		if r.URL.Query().Get("token") != token || r.URL.Query().Get("node_id") != "hy-node-a" || r.URL.Query().Get("node_type") != "hysteria" || r.Header.Get("Authorization") != "" {
 			t.Fatalf("panel authentication request is wrong")
 		}
 		_, _ = w.Write([]byte(`{"users":[{"id":1001,"uuid":"uuid-a"}]}`))
@@ -110,8 +111,8 @@ func TestPrepareXboardInitializesLocalAuthenticatorAndTrafficLogger(t *testing.T
 func TestPrepareXboardReadsTokenFileWithoutPuttingItInConfig(t *testing.T) {
 	const token = "file-token"
 	panel := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("token") != "" || r.Header.Get("Authorization") != "Bearer "+token {
-			t.Fatalf("panel request did not use token file value as bearer authentication")
+		if r.URL.Query().Get("token") != token || r.Header.Get("Authorization") != "" {
+			t.Fatalf("panel request did not use token file value with legacy authentication")
 		}
 		_, _ = w.Write([]byte(`{"users":[]}`))
 	}))

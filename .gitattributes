@@ -1,2 +1,0 @@
-# Format-patch payloads preserve the source repository's whitespace verbatim.
-integrations/xboard/*.patch -whitespace
