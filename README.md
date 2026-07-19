@@ -39,12 +39,12 @@
 - 面板节点端口填写 `443`，节点 TLS server name 与上述域名一致。
 
 ```bash
-git clone --branch feature/xboard https://github.com/Dsd1001/hysteria-xboard.git
+git clone https://github.com/Dsd1001/hysteria-xboard.git
 cd hysteria-xboard
 
-./scripts/xboard-init.sh
-docker compose pull
-docker compose up -d
+./scripts/xboard-init.sh && \
+docker compose pull && \
+docker compose up -d && \
 docker compose logs -f hysteria
 ```
 
