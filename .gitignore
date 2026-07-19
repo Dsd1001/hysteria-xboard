@@ -467,6 +467,11 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
+# Hysteria Xboard local deployment state and secrets
+/deploy/xboard/server.yaml
+/deploy/xboard/secrets/
+/deploy/xboard/data/
+
 # End of https://www.toptal.com/developers/gitignore/api/goland+all,intellij+all,go,windows,linux,macos,python,pycharm+all
 
 test-configs/

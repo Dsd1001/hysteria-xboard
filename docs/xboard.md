@@ -37,7 +37,7 @@
 - 持久化原始 traffic payload；
 - 每个 `component + chunk` 的事务内 step 账本；
 - 未完成批次定时重放；
-- 90 天已完成账本保留期；
+- 已完成 request 的 `(server_id, batch_id, payload_hash)` tombstone 永久保留；大 payload 和 step 明细可在 90 天后清理；
 - 严格拒绝负数、小数及非法用户 ID。
 
 部署顺序必须是：

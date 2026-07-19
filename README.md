@@ -21,6 +21,106 @@
 
 ---
 
+## Hysteria × Xboard 快速部署
+
+这个 fork 基于官方 Hysteria，增加了 Xboard 用户同步、本地鉴权、持久化流量批次和幂等上报。协议、客户端和 `core` 数据面保持官方实现。
+
+> [!IMPORTANT]
+> 可靠流量上报依赖配套的 Xboard V2 batch-ledger 补丁。必须先完成面板 migration、queue worker/Horizon 和 scheduler，再启动节点。仅启动本容器而不升级面板时，用户同步可以成功，但旧面板不会返回有效的流量 ACK。
+
+### 最简单的方式：Compose 本地构建
+
+前置条件：
+
+- Linux 服务器已安装 Docker 与 Docker Compose v2；
+- 一个域名已通过 A/AAAA 记录解析到这台服务器；
+- 公网可以访问服务器的 TCP 80 和 UDP 443；
+- 已在 Xboard 创建对应的 Hysteria 节点并取得 server token；
+- 已部署[配套 Xboard 后端补丁](integrations/xboard/README.md)。
+
+```bash
+git clone --branch feature/xboard https://github.com/Dsd1001/hysteria-xboard.git
+cd hysteria-xboard
+
+./scripts/xboard-init.sh
+docker compose up -d --build
+docker compose logs -f hysteria
+```
+
+初始化脚本只会询问：
+
+1. Xboard 面板地址，例如 `https://panel.example.com`；
+2. Xboard 节点 ID/code；
+3. Hysteria 服务域名；
+4. ACME 邮箱；
+5. Xboard server token（输入时不会回显）。
+
+脚本会生成：
+
+```text
+deploy/xboard/server.yaml
+deploy/xboard/secrets/xboard_token
+deploy/xboard/data/
+```
+
+token、运行配置、ACME 证书、用户缓存和流量 spool 都已加入 `.gitignore`，不会误提交到 GitHub。token 文件权限为 `0600`。
+
+查看状态：
+
+```bash
+docker compose ps
+docker compose logs --tail=200 hysteria
+```
+
+重启或更新：
+
+```bash
+git pull --ff-only
+docker compose up -d --build
+```
+
+停止服务但保留数据：
+
+```bash
+docker compose down
+```
+
+不要删除 `deploy/xboard/data/`。其中包含用户缓存、ACME 证书和未确认的流量批次。
+
+### 使用 GitHub Container Registry 镜像
+
+本分支包含 `.github/workflows/xboard-docker.yml`，会为 amd64/arm64 构建：
+
+```text
+ghcr.io/dsd1001/hysteria-xboard:latest
+ghcr.io/dsd1001/hysteria-xboard:feature-xboard
+```
+
+首次发布后需要在 GitHub Packages 中把镜像可见性设为 Public。之后可以跳过本地构建：
+
+```bash
+docker pull ghcr.io/dsd1001/hysteria-xboard:latest
+HYSTERIA_IMAGE=ghcr.io/dsd1001/hysteria-xboard:latest \
+  docker compose up -d --no-build
+```
+
+### 手动配置
+
+- ACME 配置模板：[`deploy/xboard/server.acme.yaml.example`](deploy/xboard/server.acme.yaml.example)
+- 自有证书配置模板：[`examples/xboard/server.yaml`](examples/xboard/server.yaml)
+- 详细架构、故障和回滚说明：[`docs/xboard.md`](docs/xboard.md)
+
+### 安全与可靠性边界
+
+- Xboard token 通过 Bearer Header 发送，不进入 URL；
+- 鉴权热路径只访问本地不可变用户快照；
+- 面板故障时保留 last-known-good 用户缓存；
+- 流量由内存 collector 定期写入 bbolt spool，收到 `accepted` / `already_processed` 后才删除；
+- 强制断电仍存在最多约一个 `flushInterval`（默认 1 秒）的内存计费窗口；
+- 第一阶段不提供用户级动态限速、在线 IP 上报或独立 `/healthz`。
+
+---
+
 <div class="feature-grid">
   <div>
     <h3>🛠️ Jack of all trades</h3>

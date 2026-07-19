@@ -2,3 +2,6 @@
 /.venv
 **/__pycache__/
 *.pyc
+/deploy/xboard/server.yaml
+/deploy/xboard/secrets/
+/deploy/xboard/data/

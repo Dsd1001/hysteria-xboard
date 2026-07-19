@@ -5,11 +5,17 @@ FROM golang:1-alpine AS builder
 # to enable GOPROXY.
 ARG GOPROXY=""
 
-ENV GOPROXY ${GOPROXY}
+ENV GOPROXY=${GOPROXY}
 
 COPY . /go/src/github.com/apernet/hysteria
 
 WORKDIR /go/src/github.com/apernet/hysteria
+
+# Local quick-start configuration contains credentials and runtime state.
+# .dockerignore must keep all generated files out of the build context.
+RUN test ! -e deploy/xboard/server.yaml \
+    && test ! -d deploy/xboard/secrets \
+    && test ! -d deploy/xboard/data
 
 RUN set -ex \
     && apk add git build-base bash python3 \
