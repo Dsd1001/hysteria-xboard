@@ -22,6 +22,31 @@ prompt_required() {
   printf '%s' "$value"
 }
 
+prompt_email() {
+  local email=""
+  while true; do
+    email="$(prompt_required 'ACME 邮箱：')"
+    if [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$ ]]; then
+      printf '%s' "$email"
+      return
+    fi
+    printf '错误：邮箱格式无效，请输入真实邮箱地址。\n' >&2
+  done
+}
+
+remove_empty_placeholder_dir() {
+  local path="$1"
+  if [[ ! -d "$path" ]]; then
+    return
+  fi
+  if rmdir "$path" 2>/dev/null; then
+    printf '已清理 Docker 创建的空占位目录：%s\n' "$path"
+    return
+  fi
+  printf '错误：%s 应为文件，但当前是非空目录；请备份并手工清理。\n' "$path" >&2
+  exit 1
+}
+
 require_command docker
 if ! docker compose version >/dev/null 2>&1; then
   printf '错误：未检测到 Docker Compose v2（docker compose）。\n' >&2
@@ -51,19 +76,17 @@ if [[ ! "$domain" =~ ^[A-Za-z0-9.-]+$ ]] || [[ "$domain" != *.* ]]; then
   exit 1
 fi
 
-email="$(prompt_required 'ACME 邮箱：')"
-if [[ ! "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$ ]]; then
-  printf '错误：邮箱格式无效。\n' >&2
-  exit 1
-fi
+email="$(prompt_email)"
 
-read -r -s -p 'Xboard server token（输入时不会显示）：' token
+read -r -s -p 'Xboard server token / 旧配置 apiKey（输入时不会显示）：' token
 printf '\n'
 if [[ -z "$token" ]]; then
   printf '错误：token 不能为空。\n' >&2
   exit 1
 fi
 
+remove_empty_placeholder_dir "$config_file"
+remove_empty_placeholder_dir "$secret_file"
 mkdir -p "$deploy_dir/data/acme" "$deploy_dir/secrets"
 umask 077
 printf '%s\n' "$token" > "$secret_file"

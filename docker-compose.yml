@@ -13,8 +13,18 @@ services:
       - /etc/hysteria/server.yaml
       - --disable-update-check
     volumes:
-      - ./deploy/xboard/server.yaml:/etc/hysteria/server.yaml:ro
-      - ./deploy/xboard/secrets/xboard_token:/run/secrets/xboard_token:ro
+      - type: bind
+        source: ./deploy/xboard/server.yaml
+        target: /etc/hysteria/server.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./deploy/xboard/secrets/xboard_token
+        target: /run/secrets/xboard_token
+        read_only: true
+        bind:
+          create_host_path: false
       - ./deploy/xboard/data:/var/lib/hysteria
     stop_grace_period: 30s
     security_opt:

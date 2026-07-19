@@ -39,12 +39,12 @@
 - 面板节点端口填写 `443`，节点 TLS server name 与上述域名一致。
 
 ```bash
-git clone --branch feature/xboard https://github.com/Dsd1001/hysteria-xboard.git
+git clone https://github.com/Dsd1001/hysteria-xboard.git
 cd hysteria-xboard
 
-./scripts/xboard-init.sh
-docker compose pull
-docker compose up -d
+./scripts/xboard-init.sh && \
+docker compose pull && \
+docker compose up -d && \
 docker compose logs -f hysteria
 ```
 
@@ -54,7 +54,18 @@ docker compose logs -f hysteria
 2. Xboard 节点 ID/code；
 3. Hysteria 服务域名；
 4. ACME 邮箱；
-5. Xboard server token（输入时不会回显）。
+5. Xboard server token（旧版 cedar 配置中的 `apiKey`，输入时不会回显）。
+
+旧版 cedar 配置与本项目配置的对应关系：
+
+```text
+apiHost -> baseURL
+apiKey  -> tokenFile 指向的 secret 文件内容
+nodeID  -> nodeID
+```
+
+本项目不默认把密钥直接写进 YAML。初始化脚本会把 `apiKey`/server token 单独保存到
+`deploy/xboard/secrets/xboard_token`，容器内通过 `/run/secrets/xboard_token` 读取，避免密钥出现在配置截图、Git 或普通文件 diff 中。
 
 脚本会生成：
 

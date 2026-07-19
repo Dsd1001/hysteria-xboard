@@ -37,10 +37,14 @@ jobs:
         run: |
           set -euo pipefail
           bash -n scripts/xboard-init.sh
+          mkdir -p \
+            deploy/xboard/server.yaml \
+            deploy/xboard/secrets/xboard_token
           printf '%s\n' \
             'https://panel.example.com' \
             '401' \
             'hy.example.com' \
+            'invalid-email' \
             'admin@example.com' \
             'ci-test-token' | ./scripts/xboard-init.sh
 
