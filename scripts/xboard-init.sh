@@ -78,7 +78,7 @@ fi
 
 email="$(prompt_email)"
 
-read -r -s -p 'Xboard server token（输入时不会显示）：' token
+read -r -s -p 'Xboard server token / 旧配置 apiKey（输入时不会显示）：' token
 printf '\n'
 if [[ -z "$token" ]]; then
   printf '错误：token 不能为空。\n' >&2
