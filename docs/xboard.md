@@ -148,7 +148,9 @@ docker compose pull
 docker compose up -d
 ```
 
-生产建议将 `HYSTERIA_IMAGE` 固定为明确 tag 或 digest，而不是长期跟随 `latest`。更新前备份 `/var/lib/hysteria`；回滚时恢复旧镜像，不要删除用户缓存或 `xboard-traffic.db`。单实例重启会断开现有 QUIC 连接，多节点应逐个更新。
+生产建议将 `HYSTERIA_IMAGE` 固定为明确 tag 或 digest，而不是长期跟随 `latest`。更新前备份 `/var/lib/hysteria`；回滚时恢复旧镜像，不要删除用户缓存或流量 spool。单实例重启会断开现有 QUIC 连接，多节点应逐个更新。
+
+流量 spool 与 node ID 绑定。更换 `nodeID` 时应重新运行初始化脚本，让新节点使用独立状态文件；不要删除旧 spool，旧批次可能仍需对账。若只手工修改 `server.yaml`，服务会以 `traffic spool belongs to Xboard node` 拒绝启动，这是防止跨节点错账的安全保护。
 
 ## 官方同步
 
