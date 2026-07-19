@@ -100,6 +100,10 @@ docker compose down
 
 不要删除 `deploy/xboard/data/`。其中包含用户缓存、ACME 证书和未确认的流量批次。
 
+更换 Xboard `nodeID` 时请重新运行 `./scripts/xboard-init.sh`，不要只手工修改
+`server.yaml`。初始化脚本会给新节点选择独立的用户缓存和流量 spool，并保留旧节点文件，
+避免出现 `traffic spool belongs to Xboard node` 或把旧节点流量记到新节点。
+
 ### 使用 GitHub Container Registry 镜像
 
 本分支包含 `.github/workflows/xboard-docker.yml`，会为 amd64/arm64 构建：

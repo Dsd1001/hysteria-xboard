@@ -47,6 +47,22 @@ remove_empty_placeholder_dir() {
   exit 1
 }
 
+read_existing_yaml_scalar() {
+  local key="$1"
+  local file="$2"
+  local line=""
+  local pattern="^[[:space:]]*${key}:[[:space:]]*[\"']?([^\"'#[:space:]]+)"
+  if [[ ! -f "$file" ]]; then
+    return
+  fi
+  while IFS= read -r line; do
+    if [[ "$line" =~ $pattern ]]; then
+      printf '%s' "${BASH_REMATCH[1]}"
+      return
+    fi
+  done < "$file"
+}
+
 require_command docker
 if ! docker compose version >/dev/null 2>&1; then
   printf '错误：未检测到 Docker Compose v2（docker compose）。\n' >&2
@@ -68,6 +84,27 @@ node_id="$(prompt_required 'Xboard 节点 ID/code：')"
 if [[ ! "$node_id" =~ ^[A-Za-z0-9._:-]+$ ]]; then
   printf '错误：节点 ID 只能包含字母、数字、点、下划线、冒号和连字符。\n' >&2
   exit 1
+fi
+if (( ${#node_id} > 128 )); then
+  printf '错误：节点 ID 不能超过 128 个字符。\n' >&2
+  exit 1
+fi
+
+existing_node_id="$(read_existing_yaml_scalar nodeID "$config_file")"
+existing_cache_file="$(read_existing_yaml_scalar cacheFile "$config_file")"
+existing_spool_file="$(read_existing_yaml_scalar spoolFile "$config_file")"
+cache_file="/var/lib/hysteria/xboard-users-node-${node_id}.json"
+spool_file="/var/lib/hysteria/xboard-traffic-node-${node_id}.db"
+if [[ -n "$existing_node_id" && "$existing_node_id" == "$node_id" ]]; then
+  if [[ -n "$existing_cache_file" ]]; then
+    cache_file="$existing_cache_file"
+  fi
+  if [[ -n "$existing_spool_file" ]]; then
+    spool_file="$existing_spool_file"
+  fi
+elif [[ -n "$existing_node_id" ]]; then
+  printf '检测到 node ID 从 %s 更换为 %s；旧节点状态文件将保留，新节点使用独立缓存和 spool。\n' \
+    "$existing_node_id" "$node_id"
 fi
 
 domain="$(prompt_required 'Hysteria 服务域名（例如 hy.example.com）：')"
@@ -113,11 +150,11 @@ xboard:
   apiMode: legacy
   timeout: 8s
   users:
-    cacheFile: /var/lib/hysteria/xboard-users.json
+    cacheFile: "$cache_file"
     pullInterval: 30s
     maxStale: 6h
   traffic:
-    spoolFile: /var/lib/hysteria/xboard-traffic.db
+    spoolFile: "$spool_file"
     flushInterval: 1s
     batchInterval: 1m
     reportInterval: 5s

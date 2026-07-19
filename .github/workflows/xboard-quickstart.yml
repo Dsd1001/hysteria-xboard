@@ -53,9 +53,58 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          config = Path("deploy/xboard/server.yaml").read_text()
+          config_path = Path("deploy/xboard/server.yaml")
+          config = config_path.read_text()
           assert "apiMode: legacy" in config
           assert "ci-test-token" not in config
+          assert 'nodeID: "401"' in config
+          assert 'cacheFile: "/var/lib/hysteria/xboard-users-node-401.json"' in config
+          assert 'spoolFile: "/var/lib/hysteria/xboard-traffic-node-401.db"' in config
+
+          # Simulate a deployment created before node-specific state paths.
+          config = config.replace(
+              '/var/lib/hysteria/xboard-users-node-401.json',
+              '/var/lib/hysteria/xboard-users.json',
+          ).replace(
+              '/var/lib/hysteria/xboard-traffic-node-401.db',
+              '/var/lib/hysteria/xboard-traffic.db',
+          )
+          config_path.write_text(config)
+          Path("deploy/xboard/data/xboard-users.json").touch()
+          Path("deploy/xboard/data/xboard-traffic.db").touch()
+          PY
+
+          # Same-node reinitialization must preserve existing state paths.
+          printf '%s\n' \
+            'https://panel.example.com' \
+            '401' \
+            'hy.example.com' \
+            'admin@example.com' \
+            'ci-test-token' | ./scripts/xboard-init.sh
+          python3 - <<'PY'
+          from pathlib import Path
+
+          config = Path("deploy/xboard/server.yaml").read_text()
+          assert 'cacheFile: "/var/lib/hysteria/xboard-users.json"' in config
+          assert 'spoolFile: "/var/lib/hysteria/xboard-traffic.db"' in config
+          PY
+
+          # A changed node must get separate files while old state is retained.
+          printf '%s\n' \
+            'https://panel.example.com' \
+            '402' \
+            'hy.example.com' \
+            'admin@example.com' \
+            'ci-test-token' | ./scripts/xboard-init.sh
+          python3 - <<'PY'
+          from pathlib import Path
+
+          config = Path("deploy/xboard/server.yaml").read_text()
+          assert 'nodeID: "402"' in config
+          assert 'cacheFile: "/var/lib/hysteria/xboard-users-node-402.json"' in config
+          assert 'spoolFile: "/var/lib/hysteria/xboard-traffic-node-402.db"' in config
+          assert Path("deploy/xboard/data/xboard-users.json").is_file()
+          assert Path("deploy/xboard/data/xboard-traffic.db").is_file()
           PY
 
           docker compose config --quiet
