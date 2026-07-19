@@ -15,6 +15,8 @@
 - 停权用户拒绝新连接，已有活跃连接在下一次流量事件时返回断开信号；
 - `TrafficLogger` 热路径只做分片内存累加；
 - bbolt 持久化 pending 和不可变 traffic batch；
+- 同一节点最多保留一个未 ACK immutable batch，其余流量聚合在 pending；
+- 每个 batch 最多 1000 用户，超过 PHP `int64` 的单用户 delta 自动拆到后续 batch；
 - 只有匹配的 `accepted` / `already_processed` 业务 ACK 才删除本地 batch；
 - 官方 `trafficStats` 与 Xboard logger 可通过通用 `MultiTrafficLogger` 同时启用；
 - SIGTERM 时停止后台循环，将最后内存流量写入持久化 batch 后退出。
@@ -80,6 +82,7 @@ xboard:
 - 首次启动时，远程同步失败且没有有效缓存会直接启动失败；
 - 后续同步失败不会清空用户；超过 `maxStale` 后拒绝新鉴权；
 - `flushInterval` 是强制断电/进程崩溃时的最大内存计费窗口。默认 1 秒；调小可降低窗口，但会增加磁盘 fsync 频率。
+- 官方 `core/server.Close` 没有等待全部 client handler 的显式 WaitGroup；极端并发关闭下仍存在最后一次 drain 后的尾部流量窗口。
 
 ## 运行
 

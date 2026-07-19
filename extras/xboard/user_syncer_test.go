@@ -4,9 +4,59 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+type blockingUsersClient struct {
+	calls         atomic.Int32
+	firstStarted  chan struct{}
+	secondStarted chan struct{}
+	release       chan struct{}
+}
+
+func (c *blockingUsersClient) FetchUsers(context.Context, string) (*UsersResponse, error) {
+	switch c.calls.Add(1) {
+	case 1:
+		close(c.firstStarted)
+	case 2:
+		close(c.secondStarted)
+	}
+	<-c.release
+	return &UsersResponse{Users: []User{{ID: 1001, UUID: "uuid-a"}}}, nil
+}
+
+func TestUserSyncerSerializesConcurrentSyncs(t *testing.T) {
+	client := &blockingUsersClient{
+		firstStarted:  make(chan struct{}),
+		secondStarted: make(chan struct{}),
+		release:       make(chan struct{}),
+	}
+	syncer := NewUserSyncer(client, NewUserStore(), "", time.Hour)
+	done := make(chan error, 2)
+	go func() {
+		_, err := syncer.Sync(context.Background())
+		done <- err
+	}()
+	<-client.firstStarted
+	go func() {
+		_, err := syncer.Sync(context.Background())
+		done <- err
+	}()
+
+	select {
+	case <-client.secondStarted:
+		t.Fatal("second Sync entered client before first Sync completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(client.release)
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 type fakeUsersClient struct {
 	response *UsersResponse

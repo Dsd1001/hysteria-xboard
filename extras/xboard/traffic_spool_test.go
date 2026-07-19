@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -102,33 +103,85 @@ func TestTrafficSpoolOrdersBatchesAndUsesUniqueIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if second != nil {
+		t.Fatalf("CreateBatch(with unacked batch) = %#v, want nil", second)
+	}
+	if err := spool.AckBatch(first.ID); err != nil {
+		t.Fatal(err)
+	}
+	second, err = spool.CreateBatch(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second == nil {
+		t.Fatal("CreateBatch(after ack) = nil, want next batch")
+	}
 	if first.ID == second.ID {
 		t.Fatalf("batch IDs are equal: %q", first.ID)
 	}
 	oldest, err := spool.OldestBatch()
-	if err != nil || oldest.ID != first.ID {
-		t.Fatalf("OldestBatch() = %#v, %v, want first batch", oldest, err)
+	if err != nil || oldest.ID != second.ID {
+		t.Fatalf("OldestBatch() = %#v, %v, want second batch", oldest, err)
 	}
 }
 
-func TestTrafficSpoolSaturatesCounterOverflow(t *testing.T) {
+func TestTrafficSpoolSplitsCounterAtPHPIntegerLimit(t *testing.T) {
 	spool, err := OpenTrafficSpool(filepath.Join(t.TempDir(), "traffic.db"), "401")
 	if err != nil {
 		t.Fatalf("OpenTrafficSpool() error = %v", err)
 	}
 	defer spool.Close()
-	if err := spool.AddPending(map[string]TrafficDelta{"1001": {Upload: math.MaxUint64, Download: math.MaxUint64}}); err != nil {
+	if err := spool.AddPending(map[string]TrafficDelta{"1001": {Upload: uint64(math.MaxInt64) + 10, Download: uint64(math.MaxInt64) + 20}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := spool.AddPending(map[string]TrafficDelta{"1001": {Upload: 1, Download: 1}}); err != nil {
-		t.Fatal(err)
-	}
-	batch, err := spool.CreateBatch(time.Now())
+	first, err := spool.CreateBatch(time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := batch.Traffic["1001"]; got.Upload != math.MaxUint64 || got.Download != math.MaxUint64 {
-		t.Fatalf("overflowed traffic = %#v, want saturation", got)
+	if got := first.Traffic["1001"]; got.Upload != math.MaxInt64 || got.Download != math.MaxInt64 {
+		t.Fatalf("first traffic = %#v, want MaxInt64 split", got)
+	}
+	if err := spool.AckBatch(first.ID); err != nil {
+		t.Fatal(err)
+	}
+	second, err := spool.CreateBatch(time.Now().Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := second.Traffic["1001"]; got.Upload != 10 || got.Download != 20 {
+		t.Fatalf("remainder traffic = %#v, want 10/20", got)
+	}
+}
+
+func TestTrafficSpoolLimitsBatchToOneThousandUsers(t *testing.T) {
+	spool, err := OpenTrafficSpool(filepath.Join(t.TempDir(), "traffic.db"), "401")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer spool.Close()
+	deltas := make(map[string]TrafficDelta, 1001)
+	for i := 1; i <= 1001; i++ {
+		deltas[strconv.Itoa(i)] = TrafficDelta{Upload: 1, Download: 2}
+	}
+	if err := spool.AddPending(deltas); err != nil {
+		t.Fatal(err)
+	}
+	first, err := spool.CreateBatch(time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(first.Traffic); got != 1000 {
+		t.Fatalf("first batch users = %d, want 1000", got)
+	}
+	if err := spool.AckBatch(first.ID); err != nil {
+		t.Fatal(err)
+	}
+	second, err := spool.CreateBatch(time.Now().Add(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(second.Traffic); got != 1 {
+		t.Fatalf("second batch users = %d, want 1", got)
 	}
 }
 

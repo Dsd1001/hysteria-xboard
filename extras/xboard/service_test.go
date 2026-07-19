@@ -127,12 +127,19 @@ func TestServiceFlushesCollectorToDurableBatchAndReports(t *testing.T) {
 	if err != nil || batch == nil {
 		t.Fatalf("CreateTrafficBatch() = %#v, %v", batch, err)
 	}
+	if err := service.spool.AddPending(map[string]TrafficDelta{"1002": {Upload: 7, Download: 8}}); err != nil {
+		t.Fatal(err)
+	}
 	reported, err := service.ReportOldest(context.Background())
 	if err != nil || !reported {
 		t.Fatalf("ReportOldest() = %v, %v, want true, nil", reported, err)
 	}
 	if panel.trafficBatch == nil || panel.trafficBatch.Traffic["1001"] != (TrafficDelta{Upload: 123, Download: 456}) {
 		t.Fatalf("reported batch = %#v", panel.trafficBatch)
+	}
+	next, err := service.spool.OldestBatch()
+	if err != nil || next == nil || next.Traffic["1002"] != (TrafficDelta{Upload: 7, Download: 8}) {
+		t.Fatalf("next batch after ACK = %#v, %v", next, err)
 	}
 }
 

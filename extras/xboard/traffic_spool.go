@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -18,6 +19,8 @@ var (
 	trafficSequenceKey   = []byte("sequence")
 	trafficNodeIDKey     = []byte("node_id")
 )
+
+const maxTrafficBatchUsers = 1000
 
 type TrafficBatch struct {
 	ID        string                  `json:"batch_id"`
@@ -116,24 +119,39 @@ func (s *TrafficSpool) CreateBatch(createdAt time.Time) (*TrafficBatch, error) {
 	}
 	var result *TrafficBatch
 	err := s.db.Update(func(tx *bolt.Tx) error {
+		batches := tx.Bucket(trafficBatchesBucket)
+		if key, _ := batches.Cursor().First(); key != nil {
+			// Keep at most one immutable in-flight batch. During a panel outage,
+			// newer traffic stays aggregated in fixed-size pending records.
+			return nil
+		}
 		pending := tx.Bucket(trafficPendingBucket)
 		if pending.Stats().KeyN == 0 {
 			return nil
 		}
 
-		traffic := make(map[string]TrafficDelta, pending.Stats().KeyN)
-		keys := make([][]byte, 0, pending.Stats().KeyN)
-		if err := pending.ForEach(func(key, value []byte) error {
-			copiedKey := append([]byte(nil), key...)
-			keys = append(keys, copiedKey)
+		capacity := pending.Stats().KeyN
+		if capacity > maxTrafficBatchUsers {
+			capacity = maxTrafficBatchUsers
+		}
+		traffic := make(map[string]TrafficDelta, capacity)
+		type pendingUpdate struct {
+			key       []byte
+			remainder TrafficDelta
+		}
+		updates := make([]pendingUpdate, 0, capacity)
+		cursor := pending.Cursor()
+		for key, value := cursor.First(); key != nil && len(updates) < maxTrafficBatchUsers; key, value = cursor.Next() {
 			delta, err := decodeTrafficDelta(value)
 			if err != nil {
 				return fmt.Errorf("decode pending traffic for user %q: %w", string(key), err)
 			}
-			traffic[string(key)] = delta
-			return nil
-		}); err != nil {
-			return err
+			part, remainder := splitTrafficDelta(delta)
+			traffic[string(key)] = part
+			updates = append(updates, pendingUpdate{
+				key:       append([]byte(nil), key...),
+				remainder: remainder,
+			})
 		}
 
 		meta := tx.Bucket(trafficMetaBucket)
@@ -152,11 +170,17 @@ func (s *TrafficSpool) CreateBatch(createdAt time.Time) (*TrafficBatch, error) {
 		if err != nil {
 			return err
 		}
-		if err := tx.Bucket(trafficBatchesBucket).Put([]byte(batchID), encoded); err != nil {
+		if err := batches.Put([]byte(batchID), encoded); err != nil {
 			return err
 		}
-		for _, key := range keys {
-			if err := pending.Delete(key); err != nil {
+		for _, update := range updates {
+			if update.remainder.Upload != 0 || update.remainder.Download != 0 {
+				if err := pending.Put(update.key, encodeTrafficDelta(update.remainder)); err != nil {
+					return err
+				}
+				continue
+			}
+			if err := pending.Delete(update.key); err != nil {
 				return err
 			}
 		}
@@ -167,6 +191,18 @@ func (s *TrafficSpool) CreateBatch(createdAt time.Time) (*TrafficBatch, error) {
 		return nil, fmt.Errorf("create Xboard traffic batch: %w", err)
 	}
 	return result, nil
+}
+
+func splitTrafficDelta(delta TrafficDelta) (TrafficDelta, TrafficDelta) {
+	limit := uint64(math.MaxInt64)
+	part := TrafficDelta{
+		Upload:   min(delta.Upload, limit),
+		Download: min(delta.Download, limit),
+	}
+	return part, TrafficDelta{
+		Upload:   delta.Upload - part.Upload,
+		Download: delta.Download - part.Download,
+	}
 }
 
 func (s *TrafficSpool) OldestBatch() (*TrafficBatch, error) {

@@ -3,6 +3,7 @@ package xboard
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,7 @@ type UserSyncer struct {
 	cachePath string
 	maxStale  time.Duration
 	now       func() time.Time
+	syncMu    sync.Mutex
 }
 
 func NewUserSyncer(client UsersClient, store *UserStore, cachePath string, maxStale time.Duration) *UserSyncer {
@@ -37,7 +39,12 @@ func NewUserSyncer(client UsersClient, store *UserStore, cachePath string, maxSt
 }
 
 func (s *UserSyncer) LoadCache() error {
-	if s == nil || s.store == nil {
+	if s == nil {
+		return fmt.Errorf("Xboard user store is required")
+	}
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+	if s.store == nil {
 		return fmt.Errorf("Xboard user store is required")
 	}
 	if s.cachePath == "" {
@@ -52,7 +59,12 @@ func (s *UserSyncer) LoadCache() error {
 }
 
 func (s *UserSyncer) Sync(ctx context.Context) (UserSyncResult, error) {
-	if s == nil || s.client == nil {
+	if s == nil {
+		return UserSyncResult{}, fmt.Errorf("Xboard users client is required")
+	}
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+	if s.client == nil {
 		return UserSyncResult{}, fmt.Errorf("Xboard users client is required")
 	}
 	if s.store == nil {

@@ -143,7 +143,14 @@ func (s *Service) CreateTrafficBatch(createdAt time.Time) (*TrafficBatch, error)
 }
 
 func (s *Service) ReportOldest(ctx context.Context) (bool, error) {
-	return s.reporter.ReportOldest(ctx)
+	reported, err := s.reporter.ReportOldest(ctx)
+	if err != nil || !reported {
+		return reported, err
+	}
+	if _, err := s.CreateTrafficBatch(s.now()); err != nil {
+		return true, fmt.Errorf("create next Xboard traffic batch: %w", err)
+	}
+	return true, nil
 }
 
 func (s *Service) Start(parent context.Context) error {
